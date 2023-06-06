@@ -33,7 +33,7 @@ export interface NativeOptions {
     id: string
     /** `.node` file output location */
     output: string
-  }) => { id: string; output: string }
+  }) => typeof mapping
   /**
    * - Use `dlopen` instead of `require`/`import`
    * - This must be set to true if using a different file extension that `.node`
@@ -44,11 +44,9 @@ export interface NativeOptions {
    * @default 'cjs'
    */
   target?: 'cjs' | 'esm'
-  /** For cross-compile */
-  platform?: typeof process.platform
-  /** For cross-compile */
-  arch?: typeof process.arch
 }
+
+export type Mapping = ReturnType<NonNullable<NativeOptions['map']>>
 
 const TAG = '[vite-plugin-native]'
 const PREFIX = '\0native:'
@@ -58,10 +56,8 @@ const opts: Required<NativeOptions> = {
   map: mapping => mapping,
   dlopen: false,
   target: 'cjs',
-  platform: process.platform,
-  arch: process.arch
 }
-const moduleCache = new Map<string, { id: string; output: string; }>()
+const moduleCache = new Map<string, Mapping>()
 
 export default function native(options: NativeOptions = {}): Plugin[] {
   return [
@@ -114,6 +110,8 @@ export default function native(options: NativeOptions = {}): Plugin[] {
 
         if (!node_modules) return
 
+        // 🚧 node-gyp-build
+        // ❌ prebuilds/[platform][+arch]/node.napi[.arch].node
         const hasBindingReplacements = replace(
           code,
           ms,
@@ -121,14 +119,14 @@ export default function native(options: NativeOptions = {}): Plugin[] {
           match => {
             const [, name] = match
 
-            let nativeAlias: string = name ? new Function('return ' + name)() : 'bindings.node';
+            let nativeAlias: string = name ? new Function('return ' + name)() : /* node-gyp-build */'bindings.node'
             if (!nativeAlias.endsWith('.node'))
               nativeAlias += '.node'
 
             const partsMap: Record<string, any> = Object.create({
               compiled: process.env.NODE_BINDINGS_COMPILED_DIR || 'compiled',
-              platform: opts.platform,
-              arch: opts.arch,
+              platform: process.platform,
+              arch: process.arch,
               version: process.versions.node,
               bindings: nativeAlias,
               module_root: node_modules,
@@ -172,7 +170,7 @@ export default function native(options: NativeOptions = {}): Plugin[] {
             name = path.join(node_modules, name)
 
             if (fs.existsSync(name)) {
-              let prefixedId = mapAndReturnPrefixedId.apply(this, [name])
+              const prefixedId = mapAndReturnPrefixedId.apply(this, [name])
               if (prefixedId) {
                 return `require(${JSON.stringify(prefixedId)})`
               }
@@ -180,6 +178,8 @@ export default function native(options: NativeOptions = {}): Plugin[] {
           },
         )
 
+        // ✅ `node-pre-gyp`, get the actual `.node` file path by calling `require('node-pre-gyp').find()`
+        // @see - https://github.com/springmeyer/node-addon-example/blob/v0.1.5/index.js#L1-L4
         let hasBinaryReplacements = false
         if (code.includes('node-pre-gyp')) {
           const node_pre_gyp_Rgx = /(var|let|const)\s+([a-zA-Z0-9_]+)\s+=\s+require\((['"])(@mapbox\/node-pre-gyp|node-pre-gyp)\3\);?/g
@@ -224,7 +224,7 @@ export default function native(options: NativeOptions = {}): Plugin[] {
 
               const libPath = node_pre_gyp.find(path.resolve(path.join(path.dirname(clean_id), new Function('return ' + ref)())), options)
 
-              let prefixedId = mapAndReturnPrefixedId.apply(this, [libPath])
+              const prefixedId = mapAndReturnPrefixedId.apply(this, [libPath])
               if (prefixedId) {
                 return `${d1} ${v1}=${JSON.stringify(moduleCache.get(libPath)!.id.replace(/\\/g, '/'))};${d2} ${v2}=require(${JSON.stringify(prefixedId)})`
               }
@@ -237,6 +237,28 @@ export default function native(options: NativeOptions = {}): Plugin[] {
           // new binaries
           if (hasBinaryReplacements)
             replace(code, ms, node_pre_gyp_Rgx, () => '')
+        }
+
+        // 🤔 opinionated
+        // @see - https://github.com/serialport/bindings-cpp/blob/v11.0.1/lib/load-bindings.ts#L1
+        if (/(require\("node-gyp-build"\))/.test(code)) {
+          try {
+
+          } catch { }
+          const load = require('node-gyp-build')
+          const libRoot = path.join(path.dirname(clean_id), '..')
+          // @see - https://github.com/serialport/bindings-cpp/blob/v11.0.1/lib/load-bindings.ts#L6
+          const libPath = load.resolve(libRoot)
+
+          const prefixedId = mapAndReturnPrefixedId.apply(this, [libPath])
+          if (prefixedId) {
+            // const lib = require('lib-esm')({ exports: Object.keys(load(libRoot)) })
+            // ❌ can not works with @rollup/plugin-commonjs
+            // return `const _M_=require(${JSON.stringify(prefixedId)});\n${lib.exports}`
+
+            // ✅ works fine with @rollup/plugin-commonjs
+            return `const binding = require(${JSON.stringify(prefixedId)});\nmodule.exports = exports = binding;`
+          }
         }
 
         if (![
@@ -301,7 +323,7 @@ function replace(
   return false
 }
 
-function generateDefaultMapping(native: string): ReturnType<NonNullable<NativeOptions['map']>> {
+function generateDefaultMapping(native: string): Mapping {
   const basename = path.basename(native)
   // If the user output the file name with a dir, then `relativePath` based on `outDir` will no longer be correct.
   // e.g. - `js/[name].js`
@@ -309,6 +331,7 @@ function generateDefaultMapping(native: string): ReturnType<NonNullable<NativeOp
   const outDir = path.posix.resolve(config.root, config.build.outDir)
   const relativePath = relativeify(path.posix.relative(outDir, opts.outDir))
   return {
+    native,
     id: path.posix.join(relativePath, basename),
     output: path.join(opts.outDir, basename),
   }
@@ -330,7 +353,7 @@ function mapAndReturnPrefixedId(this: PluginContext, importee: string, importer?
 
     if (!module) {
       const mapping = generateDefaultMapping(native)
-      moduleCache.set(native, module = opts.map({ native, ...mapping }) ?? mapping)
+      moduleCache.set(native, module = opts.map(mapping) ?? mapping)
 
       if (fs.existsSync(native)) {
         fs.copyFileSync(native, module.output)
