@@ -1,7 +1,7 @@
-// import { SerialPort } from 'serialport'
+import { SerialPort } from 'serialport'
 import sqlite3 from 'sqlite3'
 
 export {
-  // SerialPort,
+  SerialPort,
   sqlite3,
 }

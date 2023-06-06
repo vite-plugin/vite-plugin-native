@@ -36,6 +36,8 @@ beforeAll(async () => {
 test('vite-plugin-native', async () => {
   const main = require('./fixtures/dist/main')
   const sqlite3 = await initSqlite3(main.sqlite3)
+  const SerialPort = main.SerialPort
 
   expect(sqlite3.error).null
+  expect(SerialPort.toString().startsWith('class SerialPort')).true
 })

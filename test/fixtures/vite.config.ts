@@ -21,6 +21,19 @@ export default defineConfig({
     },
   },
   plugins: [
-    native(),
+    native({
+      map(mapping) {
+        // 🚨 If you want to cross-compile across platforms, you can change the path to `mapping.native` to do so
+
+        // 🚨 If your `build.outDir` is not `dist`, you may need to dynamically adjust the value of `mapping.id` to fit it
+
+        // 🚨 Avoid named conflict
+        if (mapping.native.includes('serialport')) {
+          mapping.id = mapping.id.replace('node.napi', 'node_serialport.napi')
+          mapping.output = mapping.output.replace('node.napi', 'node_serialport.napi')
+        }
+        return mapping
+      },
+    }),
   ],
 })
