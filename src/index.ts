@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import type { PluginContext } from 'rollup'
 import {
   type Plugin,
@@ -48,6 +50,9 @@ export interface NativeOptions {
 
 export type Mapping = ReturnType<NonNullable<NativeOptions['map']>>
 
+const require = createRequire(import.meta.url)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 const TAG = '[vite-plugin-native]'
 const PREFIX = '\0native:'
 let config: ResolvedConfig
@@ -58,6 +63,69 @@ const opts: Required<NativeOptions> = {
   target: 'cjs',
 }
 const moduleCache = new Map<string, Mapping>()
+const adapter = {
+  // 🚨 only fixed code snippets
+  // @see - https://github.com/springmeyer/node-addon-example/blob/v0.1.5/index.js#L1-L4
+  'node-pre-gyp'(this: PluginContext, code: string, id: string) {
+    const regexp = /require\((['"])(@mapbox\/node-pre-gyp|node-pre-gyp)\1\)/
+    if (!regexp.test(code)) return
+
+    const node_pre_gyp = loadNpmPkg('@mapbox/node-pre-gyp', id) ?? loadNpmPkg('node-pre-gyp', id)
+    if (node_pre_gyp) return
+
+    const libRoot = path.join(path.dirname(id), '..')
+    const libPath = node_pre_gyp.find(libRoot, {/* TODO */ })
+
+    const prefixedId = mapAndReturnPrefixedId.call(this, libPath)
+    if (prefixedId) {
+      return module_exports_binding(prefixedId)
+    }
+  },
+  // 🚨 only fixed code snippets
+  // @see - https://github.com/serialport/bindings-cpp/blob/v11.0.1/lib/load-bindings.ts#L1-L6
+  'node-gyp-build'(this: PluginContext, code: string, id: string) {
+    const regexp = /require\((['"])node-gyp-build\1\)/
+    if (!regexp.test(code)) return
+
+    const node_gyp_build = loadNpmPkg('node-gyp-build', id)
+    if (node_gyp_build) return
+
+    const libRoot = path.join(path.dirname(id), '..')
+    const libPath = node_gyp_build.resolve(libRoot)
+
+    const prefixedId = mapAndReturnPrefixedId.call(this, libPath)
+    if (prefixedId) {
+      return module_exports_binding(prefixedId)
+    }
+  },
+  // @see - https://github.com/TooTallNate/node-bindings/tree/v1.3.0#example
+  'node-bindings'(this: PluginContext, code: string, id: string) {
+    const regexp = /require\((['"])bindings\1\)\(\1binding.node\1\)/
+    if (!regexp.test(code)) return
+
+    const libPath = bindings.resolve()
+    if (!libPath) return
+
+    const prefixedId = mapAndReturnPrefixedId.call(this, libPath)
+    if (prefixedId) {
+      return module_exports_binding(prefixedId)
+    }
+  },
+  'simple-require'(this: PluginContext, code: string, id: string) {
+    const regexp = /require\((['"])(.*\.(node|dll))\1\)/
+
+    const match = code.match(regexp)
+    if (!match) return
+
+    const [, , moduleId] = match
+    const libPath = path.resolve(id, moduleId)
+
+    const prefixedId = mapAndReturnPrefixedId.call(this, libPath)
+    if (prefixedId) {
+      return code.replace(moduleId, prefixedId)
+    }
+  },
+}
 
 export default function native(options: NativeOptions = {}): Plugin[] {
   return [
@@ -67,17 +135,11 @@ export default function native(options: NativeOptions = {}): Plugin[] {
       resolveId(importee, importer) {
         if (importee.startsWith(PREFIX)) return importee
 
-        // Avoid trouble with other plugins like commonjs
-        if (importee.endsWith('?commonjs-require'))
-          importee = importee.slice(1, -'?commonjs-require'.length)
-
-        // Remove the `\0` PREFIX
-        if (importer?.startsWith('\0') && importer.includes(':'))
-          importer = importer.slice(importer.indexOf(':') + 1)
-        if (importee.startsWith('\0') && importee.includes(':'))
-          importee = importee.slice(importee.indexOf(':') + 1)
-
-        return mapAndReturnPrefixedId.call(this, importee, importer)
+        return mapAndReturnPrefixedId.call(
+          this,
+          cleanId(importee),
+          importer ? cleanId(importer) : importer,
+        )
       },
     },
     {
@@ -95,183 +157,56 @@ export default function native(options: NativeOptions = {}): Plugin[] {
         if (id.startsWith(PREFIX)) {
           return exportModule(id.slice(PREFIX.length))
         }
-
-        const module = moduleCache.get(id)
-        if (module) {
-          return exportModule(module.id)
-        }
       },
       transform(code, id) {
-        const ms = new MagicString(code)
-        const bindingsRgx = /require\(['"]bindings['"]\)\(((['"]).+?\2)?\)/g
-        const simpleRequireRgx = /require\(['"](.*?)['"]\)/g // TODO: use AST parser
-        const clean_id = cleanUrl(id.startsWith('\0') ? id.replace('\0', '') : id)
-        const node_modules = find_node_modules(clean_id)[0]
+        id = cleanId(id)
+        let result: string | undefined
 
-        if (!node_modules) return
+        result ??= adapter['node-pre-gyp'].call(this, code, id)
+        result ??= adapter['node-gyp-build'].call(this, code, id)
+        result ??= adapter['node-bindings'].call(this, code, id)
+        result ??= adapter['simple-require'].call(this, code, id)
 
-        // 🚧 node-gyp-build
-        // ❌ prebuilds/[platform][+arch]/node.napi[.arch].node
-        const hasBindingReplacements = replace(
-          code,
-          ms,
-          bindingsRgx,
-          match => {
-            const [, name] = match
-
-            let nativeAlias: string = name ? new Function('return ' + name)() : /* node-gyp-build */'bindings.node'
-            if (!nativeAlias.endsWith('.node'))
-              nativeAlias += '.node'
-
-            const partsMap: Record<string, any> = Object.create({
-              compiled: process.env.NODE_BINDINGS_COMPILED_DIR || 'compiled',
-              platform: process.platform,
-              arch: process.arch,
-              version: process.versions.node,
-              bindings: nativeAlias,
-              module_root: node_modules,
-            })
-
-            const possibilities = [
-              ['module_root', 'build', 'bindings'],
-              ['module_root', 'build', 'Debug', 'bindings'],
-              ['module_root', 'build', 'Release', 'bindings'],
-              ['module_root', 'compiled', 'version', 'platform', 'arch', 'bindings'],
-            ]
-
-            const possiblePaths = possibilities.map(parts => {
-              parts = parts.map(part => {
-                if (partsMap[part])
-                  return partsMap[part]
-                return part
-              })
-              return path.posix.join(...parts)
-            })
-
-            const chosenPath = possiblePaths.find(x => fs.existsSync(x)) || possiblePaths[0]
-
-            const prefixedId = mapAndReturnPrefixedId.apply(this, [chosenPath])
-            if (prefixedId) {
-              return `require(${JSON.stringify(prefixedId)})`
-            }
-          },
-        )
-
-        const hasRequireReplacements = replace(
-          code,
-          ms,
-          simpleRequireRgx,
-          match => {
-            let [, name] = match
-
-            if (!name.endsWith('.node'))
-              name += '.node'
-
-            name = path.join(node_modules, name)
-
-            if (fs.existsSync(name)) {
-              const prefixedId = mapAndReturnPrefixedId.apply(this, [name])
-              if (prefixedId) {
-                return `require(${JSON.stringify(prefixedId)})`
-              }
-            }
-          },
-        )
-
-        // ✅ `node-pre-gyp`, get the actual `.node` file path by calling `require('node-pre-gyp').find()`
-        // @see - https://github.com/springmeyer/node-addon-example/blob/v0.1.5/index.js#L1-L4
-        let hasBinaryReplacements = false
-        if (code.includes('node-pre-gyp')) {
-          const node_pre_gyp_Rgx = /(var|let|const)\s+([a-zA-Z0-9_]+)\s+=\s+require\((['"])(@mapbox\/node-pre-gyp|node-pre-gyp)\3\);?/g
-          const node_pre_gyp_Match = node_pre_gyp_Rgx.exec(code)
-          const binaryRgx = node_pre_gyp_Match
-            ? new RegExp(`\\b(var|let|const)\\s+([a-zA-Z0-9_]+)\\s+=\\s+${node_pre_gyp_Match[2]}\\.find\\(path\\.resolve\\(path\\.join\\(__dirname,\\s*((?:['"]).*\\4)\\)\\)\\);?\\s*(var|let|const)\\s+([a-zA-Z0-9_]+)\\s+=\\s+require\\(\\2\\)`, 'g')
-            : /\b(var|let|const)\s+([a-zA-Z0-9_]+)\s+=\s+binary\.find\(path\.resolve\(path\.join\(__dirname,\s*((?:['"]).*\4)\)\)\);?\s*(var|let|const)\s+([a-zA-Z0-9_]+)\s+=\s+require\(\2\)/g
-
-          hasBinaryReplacements = replace(
-            code,
-            ms,
-            binaryRgx,
-            match => {
-              let node_pre_gyp: any
-
-              // We can't simply require('node-pre-gyp') because we are not in the same context as the target module
-              // Maybe node-pre-gyp is installed in node_modules/target_module/node_modules
-              let node_pre_gyp_path = path.dirname(clean_id)
-              let node_pre_gyp_path_pre: string | undefined
-              while (node_pre_gyp_path !== node_pre_gyp_path_pre) {
-                // Start with the target module context and then go back in the directory tree
-                // until the right context has been found
-                try {
-                  // noinspection NpmUsedModulesInstalled
-                  node_pre_gyp ??= require(path.resolve(path.join(node_pre_gyp_path, 'node_modules', '@mapbox/node-pre-gyp')))
-                } catch { }
-                try {
-                  // noinspection NpmUsedModulesInstalled
-                  node_pre_gyp ??= require(path.resolve(path.join(node_pre_gyp_path, 'node_modules', 'node-pre-gyp')))
-                } catch { }
-
-                if (node_pre_gyp) break
-
-                // lookup
-                node_pre_gyp_path_pre = node_pre_gyp_path
-                node_pre_gyp_path = path.dirname(node_pre_gyp_path)
-              }
-
-              if (!node_pre_gyp) return
-
-              let [, d1, v1, ref, d2, v2] = match
-
-              const libPath = node_pre_gyp.find(path.resolve(path.join(path.dirname(clean_id), new Function('return ' + ref)())), options)
-
-              const prefixedId = mapAndReturnPrefixedId.apply(this, [libPath])
-              if (prefixedId) {
-                return `${d1} ${v1}=${JSON.stringify(moduleCache.get(libPath)!.id.replace(/\\/g, '/'))};${d2} ${v2}=require(${JSON.stringify(prefixedId)})`
-              }
-            },
-          )
-
-          // If the native module has been required through a hard-coded path, then node-pre-gyp
-          // is not required anymore - remove the require('node-pre-gyp') statement because it
-          // pulls some additional dependencies - like AWS S3 - which are needed only for downloading
-          // new binaries
-          if (hasBinaryReplacements)
-            replace(code, ms, node_pre_gyp_Rgx, () => '')
-        }
-
-        // 🤔 opinionated
-        // @see - https://github.com/serialport/bindings-cpp/blob/v11.0.1/lib/load-bindings.ts#L1
-        if (/(require\("node-gyp-build"\))/.test(code)) {
-          try {
-
-          } catch { }
-          const load = require('node-gyp-build')
-          const libRoot = path.join(path.dirname(clean_id), '..')
-          // @see - https://github.com/serialport/bindings-cpp/blob/v11.0.1/lib/load-bindings.ts#L6
-          const libPath = load.resolve(libRoot)
-
-          const prefixedId = mapAndReturnPrefixedId.apply(this, [libPath])
-          if (prefixedId) {
-            // const lib = require('lib-esm')({ exports: Object.keys(load(libRoot)) })
-            // ❌ can not works with @rollup/plugin-commonjs
-            // return `const _M_=require(${JSON.stringify(prefixedId)});\n${lib.exports}`
-
-            // ✅ works fine with @rollup/plugin-commonjs
-            return `const binding = require(${JSON.stringify(prefixedId)});\nmodule.exports = exports = binding;`
-          }
-        }
-
-        if (![
-          hasBindingReplacements,
-          hasRequireReplacements,
-          hasBinaryReplacements,
-        ].some(Boolean)) return
-
-        return ms.toString()
+        return result
       },
     },
   ]
 }
+
+function cleanId(url: string) {
+  return cleanUrl(url.startsWith('\0') ? url.replace('\0', '') : url)
+}
+
+function loadNpmPkg<T = any>(id: string, root: string): T | undefined {
+  let module = loadNpmPkg.cache.get(id)
+
+  if (!module) {
+    const node_modules = find_node_modules(root)
+    try {
+      for (const n_m of node_modules) {
+        module = require(path.join(n_m, id))
+        break
+      }
+    } catch { }
+  }
+
+  return module
+}
+loadNpmPkg.cache = new Map<string, any>()
+
+// @see - https://github.com/TooTallNate/node-bindings/blob/v1.3.0/bindings.js#L12-L36
+function bindings() { }
+bindings.resolve = function bindings_resolve(name = 'binding.node'): string | undefined {
+  // TODO: implements
+}
+
+function module_exports_binding(prefixedId: string) {
+  // Only generate the fixed code snippets and leave the rest to `@rollup/plugin-commonjs`
+  // @see - https://github.com/TryGhost/node-sqlite3/blob/v5.1.6/lib/sqlite3-binding.js#L5
+  return `const binding = require(${JSON.stringify(prefixedId)});\nmodule.exports = exports = binding;`
+}
+
+// ----------------------------------------------------------------------
 
 function exportModule(id: string) {
   if (opts.dlopen)
@@ -297,30 +232,8 @@ const require = createRequire(import.meta.url);
 export default require(${JSON.stringify(id)});
 `
 
+  // Use `export default` instead of `module.exports` can avoid `@rollup/plugin-commonjs` parse :)
   return `export default require(${JSON.stringify(id)});\n`
-}
-
-function replace(
-  code: string,
-  ms: MagicString,
-  pattern: RegExp,
-  fn: (match: RegExpExecArray) => void | string,
-) {
-  pattern.lastIndex = 0
-
-  let match
-  while ((match = pattern.exec(code))) {
-    const replacement = fn(match)
-    if (replacement == null) continue
-
-    const start = match.index
-    const end = start + match[0].length
-    ms.overwrite(start, end, replacement)
-
-    return true
-  }
-
-  return false
 }
 
 function generateDefaultMapping(native: string): Mapping {
@@ -343,6 +256,8 @@ function mapAndReturnPrefixedId(this: PluginContext, importee: string, importer?
   let native: string | undefined
   if (/\.(node|dll)$/i.test(importee))
     native = resolvedPath
+
+  // 🤔 for resolveId try resolve
   else if (fs.existsSync(resolvedPath + '.node'))
     native = resolvedPath + '.node'
   else if (fs.existsSync(resolvedPath + '.dll'))
@@ -353,12 +268,18 @@ function mapAndReturnPrefixedId(this: PluginContext, importee: string, importer?
 
     if (!module) {
       const mapping = generateDefaultMapping(native)
-      moduleCache.set(native, module = opts.map(mapping) ?? mapping)
+      module = opts.map(mapping) ?? mapping
+
+      moduleCache.set(native, module) // original
+      native = mapping.native
+      moduleCache.set(native, module) // user changed
 
       if (fs.existsSync(native)) {
-        fs.copyFileSync(native, module.output)
+        fs.copyFileSync(native, module.output) // todo: ensure dir
       } else {
+        // Maybe error from the user changes module.native
         this.warn(`${TAG} ${native} does not exist`)
+        return
       }
     }
 
