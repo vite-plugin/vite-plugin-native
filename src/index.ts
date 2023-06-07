@@ -9,7 +9,6 @@ import {
   normalizePath,
 } from 'vite'
 import {
-  MagicString,
   cleanUrl,
   node_modules as find_node_modules,
   relativeify,
@@ -48,7 +47,7 @@ export interface NativeOptions {
   target?: 'cjs' | 'esm'
 }
 
-export type Mapping = ReturnType<NonNullable<NativeOptions['map']>>
+export type Mapping = Parameters<NonNullable<NativeOptions['map']>>[0]
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -103,7 +102,12 @@ const adapter = {
     const regexp = /require\((['"])bindings\1\)\(\1binding.node\1\)/
     if (!regexp.test(code)) return
 
-    const libPath = bindings.resolve()
+    const libPath = bindings.resolve({
+      root: id,
+      // 🤔 confused - https://github.com/TooTallNate/node-bindings/blob/v1.3.0/bindings.js#L18
+      // should be 'binding.node' rather than 'bindings.node'
+      bindings: 'binding.node',
+    })
     if (!libPath) return
 
     const prefixedId = mapAndReturnPrefixedId.call(this, libPath)
@@ -196,8 +200,55 @@ loadNpmPkg.cache = new Map<string, any>()
 
 // @see - https://github.com/TooTallNate/node-bindings/blob/v1.3.0/bindings.js#L12-L36
 function bindings() { }
-bindings.resolve = function bindings_resolve(name = 'binding.node'): string | undefined {
-  // TODO: implements
+bindings.resolve = function bindings_resolve(options: {
+  root: string,
+  [key: string]: any,
+}): string | undefined {
+  const { root, ...rest } = options
+  const info = Object.assign({
+    arrow: process.env.NODE_BINDINGS_ARROW ?? ' → ',
+    compiled: process.env.NODE_BINDINGS_COMPILED_DIR ?? 'compiled',
+    platform: process.platform,
+    arch: process.arch,
+    version: process.versions.node,
+    bindings: 'bindings.node',
+    try: [
+      // node-gyp's linked version in the "build" dir
+      ['module_root', 'build', 'bindings'],
+      // node-waf and gyp_addon (a.k.a node-gyp)
+      ['module_root', 'build', 'Debug', 'bindings'],
+      ['module_root', 'build', 'Release', 'bindings'],
+      // Debug files, for development (legacy behavior, remove for node v0.9)
+      ['module_root', 'out', 'Debug', 'bindings'],
+      ['module_root', 'Debug', 'bindings'],
+      // Release files, but manually compiled (legacy behavior, remove for node v0.9)
+      ['module_root', 'out', 'Release', 'bindings'],
+      ['module_root', 'Release', 'bindings'],
+      // Legacy from node-waf, node <= 0.4.x
+      ['module_root', 'build', 'default', 'bindings'],
+      // Production "Release" buildtype binary (meh...)
+      ['module_root', 'compiled', 'version', 'platform', 'arch', 'bindings'],
+    ],
+  }, rest)
+
+  const node_modules = find_node_modules(root)
+  for (const n_m of node_modules) {
+    for (const list of info.try) {
+      // https://github.com/TooTallNate/node-bindings/tree/v1.3.0#nice-error-output
+      const bindings_node = list
+        .map(p => {
+          if (p === 'module_root') {
+            return n_m
+          }
+          return info[p] ?? p
+        })
+        .join('/')
+
+      if (fs.existsSync(bindings_node)) {
+        return bindings_node
+      }
+    }
+  }
 }
 
 function module_exports_binding(prefixedId: string) {
