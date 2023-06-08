@@ -1,3 +1,9 @@
+## 0.2.0 (2023-06-07)
+
+- 8127327 feat: support `node-bindings`
+- 2edcb31 refactor: better logic
+- bd3e000 log: update
+
 ## 0.1.0 (2023-06-06)
 
 - 71028d7 feat(test): support `serialport`
