@@ -70,9 +70,9 @@ const adapter = {
     if (!regexp.test(code)) return
 
     const node_pre_gyp = loadNpmPkg('@mapbox/node-pre-gyp', id) ?? loadNpmPkg('node-pre-gyp', id)
-    if (node_pre_gyp) return
+    if (!node_pre_gyp) return
 
-    const libRoot = path.join(path.dirname(id), '..')
+    const libRoot = path.join(path.dirname(id), '../package.json')
     const libPath = node_pre_gyp.find(libRoot, {/* TODO */ })
 
     const prefixedId = mapAndReturnPrefixedId.call(this, libPath)
@@ -87,7 +87,7 @@ const adapter = {
     if (!regexp.test(code)) return
 
     const node_gyp_build = loadNpmPkg('node-gyp-build', id)
-    if (node_gyp_build) return
+    if (!node_gyp_build) return
 
     const libRoot = path.join(path.dirname(id), '..')
     const libPath = node_gyp_build.resolve(libRoot)
@@ -186,12 +186,12 @@ function loadNpmPkg<T = any>(id: string, root: string): T | undefined {
 
   if (!module) {
     const node_modules = find_node_modules(root)
-    try {
-      for (const n_m of node_modules) {
+    for (const n_m of node_modules) {
+      try {
         module = require(path.join(n_m, id))
         break
-      }
-    } catch { }
+      } catch { }
+    }
   }
 
   return module
