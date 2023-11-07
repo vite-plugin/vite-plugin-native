@@ -153,7 +153,7 @@ export default function native(options: NativeOptions = {}): Plugin[] {
 
         // NativeOptions initialize
         Object.assign(opts, options)
-        opts.outDir = path.posix.resolve(_config.root, normalizePath(opts.outDir))
+        opts.outDir = path.resolve(_config.root, normalizePath(opts.outDir))
 
         fs.mkdirSync(opts.outDir, { recursive: true })
       },
@@ -292,17 +292,17 @@ function generateDefaultMapping(native: string): Mapping {
   // If the user output the file name with a dir, then `relativePath` based on `outDir` will no longer be correct.
   // e.g. - `js/[name].js`
   // TODO: better calculation value of `id` automatically
-  const outDir = path.posix.resolve(config.root, config.build.outDir)
-  const relativePath = relativeify(path.posix.relative(outDir, opts.outDir))
+  const outDir = path.resolve(config.root, config.build.outDir)
+  const relativePath = relativeify(path.relative(outDir, opts.outDir))
   return {
     native,
-    id: path.posix.join(relativePath, basename),
+    id: path.join(relativePath, basename),
     output: path.join(opts.outDir, basename),
   }
 }
 
 function mapAndReturnPrefixedId(this: PluginContext, importee: string, importer?: string) {
-  const resolvedPath = path.posix.resolve(importer ? path.dirname(importer) : '', importee)
+  const resolvedPath = path.resolve(importer ? path.dirname(importer) : '', importee)
 
   let native: string | undefined
   if (/\.(node|dll)$/i.test(importee))
