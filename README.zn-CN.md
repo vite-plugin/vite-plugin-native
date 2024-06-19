@@ -17,12 +17,15 @@ npm i -D vite-plugin-native
 
 ## Usage
 
-```javascript
+```js
 import native from 'vite-plugin-native'
 
 export default {
   plugins: [
-    native(/* options */)
+    native({
+      // Enable Webpack
+      webpack: {},
+    })
   ]
 }
 ```
@@ -31,36 +34,16 @@ export default {
 
 ```ts
 export interface NativeOptions {
-  /**
-   * Where we want to physically put the extracted `.node` files
-   * @default 'dist-native'
-   */
-  outDir?: string
-  /**
-   * - Modify the final filename for specific modules
-   * - A function that receives a full path to the original file, and returns a desired filename
-   * - Or a function that returns a desired file name and a specific destination to copy to
-   * @experimental
-   * @todo better calculation value of `id` automatically
-   */
-  map?: (mapping: {
-    /** `.node` file path */
-    native: string
-    /** require id of `.node` file */
-    id: string
-    /** `.node` file output location */
-    output: string
-  }) => typeof mapping
-  /**
-   * - Use `dlopen` instead of `require`/`import`
-   * - This must be set to true if using a different file extension that `.node`
-   */
-  dlopen?: boolean
-  /**
-   * If the target is `esm`, so we can't use `require` (and `.node` is not supported in `import` anyway), we will need to use `createRequire` instead 
-   * @default 'cjs'
-   */
-  target?: 'cjs' | 'esm'
+  /** @default 'node_natives' */
+  assetsDir?: string
+  /** By default native modules are automatically detected if this option is not explicitly configure by the user. */
+  natives?: string[] | ((natives: string[]) => string[])
+  /** Enable and configure webpack. */
+  webpack?: {
+    config?: (config: Configuration) => Configuration | undefined | Promise<Configuration | undefined>
+    'node-loader'?: NodeLoaderOptions,
+    '@vercel/webpack-asset-relocator-loader'?: WebpackAssetRelocatorLoader,
+  },
 }
 ```
 
@@ -303,11 +286,7 @@ C/C++ 构建的 .node 文件本质上是一个 cjs 模块，无论怎样它都�
 
 ## 为什么是 Webpack
 
-<!--
-首先我们从上面的说明中关于 C/C++ 模块的支持能总结出两个点：
-
-1. 必须是 bundle 方案，并且以 cjs 格式构建
-2. 模块需要被一个模块中心管理，这样才能避免 作用域以及同步/异步 带来的副作用问题
--->
-
 你可能已经意识到 Vite 的 Pre-Bundling 的行为与 Webpack 的行为趋同，为什么我们不直接使用 Pre-Bundling 构建 C/C++ 模块，而且它也是基于 cjs 格式的 bundle 方案。主要是 Webpack 的生态优势，这能让我们少做很多事情且低风险。
+
+## 基于 Vite API 方案
+未来是否会提供一个基于 Vite(Rollup) 自身 API 的方案？暂时没有明确计划。作者目前就职于一个与该插件毫无关系的商业公司，对于此项目的维护仅仅是出于对 Vite/Electron 社区的热爱！
