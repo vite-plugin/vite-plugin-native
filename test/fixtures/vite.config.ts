@@ -1,11 +1,16 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { builtinModules } from 'node:module'
 import { defineConfig } from 'vite'
 import native from '../..'
+
+fs.rmSync(path.join(__dirname, 'dist'), { recursive: true, force: true })
 
 export default defineConfig({
   root: __dirname,
   build: {
     minify: false,
+    emptyOutDir: false,
     lib: {
       entry: 'main.ts',
       formats: ['cjs'],
@@ -13,7 +18,6 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
-        'electron',
         'vite',
         ...builtinModules,
         ...builtinModules.map(m => `node:${m}`),
@@ -22,18 +26,8 @@ export default defineConfig({
   },
   plugins: [
     native({
-      map(mapping) {
-        // 🚨 If you want to cross-compile across platforms, you can change the path to `mapping.native` to do so
-
-        // 🚨 If your `build.outDir` is not `dist`, you may need to dynamically adjust the value of `mapping.id` to fit it
-
-        // 🚨 Avoid named conflict
-        if (mapping.native.includes('serialport')) {
-          mapping.id = mapping.id.replace('node.napi', 'node_serialport.napi')
-          mapping.output = mapping.output.replace('node.napi', 'node_serialport.napi')
-        }
-        return mapping
-      },
+      natives: (names) => names.concat('serialport'),
+      webpack: {},
     }),
   ],
 })
