@@ -4,6 +4,14 @@
   "description": "Supports Node/Electron C/C++ native addons",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./*": "./*"
+  },
   "repository": "https://github.com/vite-plugin/vite-plugin-native.git",
   "author": "Leo Wang(草鞋没号) <308487730@qq.com>",
   "license": "MIT",

@@ -3,9 +3,11 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import glob from 'fast-glob'
-import libEsm from 'lib-esm'
+import _libEsm from 'lib-esm'
 import { node_modules as findNodeModules } from 'vite-plugin-utils/function'
 
+// @ts-ignore
+const libEsm: typeof import('lib-esm').default = _libEsm.default || _libEsm
 const cjs = createCjs(import.meta.url)
 
 export function createCjs(url = import.meta.url) {

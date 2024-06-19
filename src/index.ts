@@ -6,13 +6,9 @@ import {
   type Alias,
   normalizePath,
 } from 'vite'
-import {
-  type Configuration,
-  validate,
-  webpack, // require('webpack').webpack
-} from 'webpack'
-import { COLOURS } from 'vite-plugin-utils/function'
+import type { Configuration } from 'webpack'
 import type { NodeLoaderOptions, WebpackAssetRelocatorLoader } from './types'
+import { COLOURS } from 'vite-plugin-utils/function'
 import { createCjs, ensureDir, getInteropSnippet, getNatives } from './utils'
 
 export interface NativeOptions {
@@ -31,8 +27,8 @@ export interface NativeOptions {
 const cjs = createCjs(import.meta.url)
 const TAG = '[vite-plugin-native]'
 const loader1 = '@vercel/webpack-asset-relocator-loader'
-const NativeExt = '.native.js'
-const InteropExt = '.interop.js'
+const NativeExt = '.native.cjs'
+const InteropExt = '.interop.mjs'
 
 export default function native(options: NativeOptions): Plugin {
   const assetsDir = options.assetsDir ??= 'node_natives'
@@ -148,6 +144,7 @@ async function webpackBundle(
   webpackOpts: NonNullable<NativeOptions['webpack']>
 ) {
   webpackOpts[loader1] ??= {}
+  const { validate, webpack } = cjs.require('webpack') as typeof import('webpack');
   const assetBase = webpackOpts[loader1].outputAssetBase ??= 'native_modules'
 
   return new Promise<null>(async (resolve, reject) => {

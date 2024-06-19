@@ -10,8 +10,8 @@ export default defineConfig({
     minify: false,
     lib: {
       entry: 'src/index.ts',
-      formats: ['es'],
-      fileName: () => '[name].js',
+      formats: ['cjs', 'es'],
+      fileName: format => format === 'es' ? '[name].mjs' : '[name].js',
     },
     rollupOptions: {
       external: [
