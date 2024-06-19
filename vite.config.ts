@@ -5,20 +5,16 @@ import { builtinModules } from 'node:module'
 import { defineConfig } from 'vite'
 import pkg from './package.json'
 
-const isdev = process.argv.slice(2).includes('--watch')
-
 export default defineConfig({
   build: {
     minify: false,
-    emptyOutDir: !isdev,
     lib: {
       entry: 'src/index.ts',
-      formats: ['cjs', 'es'],
-      fileName: format => format === 'es' ? '[name].mjs' : '[name].js',
+      formats: ['es'],
+      fileName: () => '[name].js',
     },
     rollupOptions: {
       external: [
-        'electron',
         'vite',
         ...builtinModules,
         ...builtinModules.map(m => `node:${m}`),
