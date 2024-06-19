@@ -2,7 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import type { AssetInfo, Compiler, WebpackPluginInstance } from 'webpack'
 import glob from 'fast-glob'
 import libEsm from 'lib-esm'
 import { node_modules as findNodeModules } from 'vite-plugin-utils/function'
@@ -52,23 +51,6 @@ export async function getNatives(root = process.cwd()) {
   return natives
 }
 
-export class OnBuildDone implements WebpackPluginInstance {
-  name = 'vite-plugin-native'
-
-  constructor(
-    public options: {
-      name: string
-      callback: (assets: Map<string, AssetInfo>) => void
-    }
-  ) { }
-
-  apply(compiler: Compiler) {
-    compiler.hooks.afterDone.tap(`${this.name}:build-done`, (stats) => {
-      this.options.callback(stats.compilation.assetsInfo)
-    })
-  }
-}
-
 export function getInteropSnippet(name: string, id: string) {
   const snippet = libEsm({
     exports: Object.getOwnPropertyNames(cjs.require(name)),
@@ -81,4 +63,11 @@ const cjsRequire = createRequire(import.meta.url);
 const _M_ = cjsRequire("${id}");
 ${snippet.exports}
 `
+}
+
+export function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  return dir
 }

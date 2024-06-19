@@ -13,7 +13,7 @@ import {
 } from 'webpack'
 import { COLOURS } from 'vite-plugin-utils/function'
 import type { NodeLoaderOptions, WebpackAssetRelocatorLoader } from './types'
-import { OnBuildDone, createCjs, getInteropSnippet, getNatives } from './utils'
+import { createCjs, ensureDir, getInteropSnippet, getNatives } from './utils'
 
 export interface WebpackConfig {
   webpackConfig?: Configuration | ((config: Configuration) => Configuration | undefined | Promise<Configuration | undefined>)
@@ -22,6 +22,8 @@ export interface WebpackConfig {
 }
 
 export interface NativeOptions {
+  /** @default 'node_natives' */
+  assetsDir?: string
   /** By default native modules are automatically detected if this option is not explicitly configure by the user. */
   natives?: string[] | ((natives: string[]) => string[])
   /** Enable and configure webpack. */
@@ -39,13 +41,21 @@ const NativeExt = '.native.js'
 const InteropExt = '.interop.js'
 
 export default function native(options: NativeOptions): Plugin {
+  const assetsDir = options.assetsDir ??= 'node_natives'
+  const nativesMap = new Map<string, {
+    built: boolean
+    interopFilename: string
+  }>
+  // Webpack output(absolute path)
+  let output: string
+
   return {
     name: 'vite-plugin-native',
-    apply: 'build',
     async config(config) {
       // @see https://github.com/vitejs/vite/blob/v5.3.1/packages/vite/src/node/config.ts#L524-L527
       const resolvedRoot = normalizePath(config.root ? path.resolve(config.root) : process.cwd())
       const outDir = config.build?.outDir ?? 'dist'
+      output = normalizePath(path.join(resolvedRoot, outDir, assetsDir))
 
       const natives = await getNatives(resolvedRoot)
       options.natives ??= natives
@@ -54,25 +64,29 @@ export default function native(options: NativeOptions): Plugin {
         options.natives = options.natives(natives)
       }
 
-      // Must be explicitly specify use Webpack.
-      if (!options.webpack) return
-
-      const output = normalizePath(path.join(resolvedRoot, outDir))
-      const nativeExists = (native: string) => fs.existsSync(path.join(output, native + NativeExt))
       const aliases: Alias[] = []
+      const withDistAssetBase = (p: string) => (assetsDir && p) ? `${assetsDir}/${p}` : p
+
+      options.natives.length && ensureDir(output)
 
       for (const native of options.natives) {
+        const interopFilename = path.join(output, native + InteropExt)
+
         aliases.push({
           find: native,
-          replacement: path.join(output, native + InteropExt),
-          async customResolver(source) {
-            if (!nativeExists(native)) {
-              try {
-                await webpackBundle(native, output, options.webpack!)
-              } catch (error: any) {
-                console.error(`\n${TAG}`, error)
-                process.exit(1)
-              }
+          replacement: interopFilename,
+          customResolver(source) {
+            const record = nativesMap.get(native)
+            if (!record?.built) {
+              // Generate Vite and Webpack interop file.
+              const code = getInteropSnippet(native, `./${withDistAssetBase(native + NativeExt)}`)
+              fs.writeFileSync(interopFilename, code)
+
+              // We did not immediately call the `webpackBundle()` build here 
+              // because `build.emptyOutDir = true` will cause the built file to be removed.
+
+              // Collect modules that are explicitly used.
+              nativesMap.set(native, { built: false, interopFilename })
             }
 
             return { id: source }
@@ -88,6 +102,25 @@ export default function native(options: NativeOptions): Plugin {
     },
     resolveId() {
       // TODO: dynamic detect by bare moduleId. e.g. serialport
+    },
+    async buildEnd(error) {
+      if (error) return
+
+      // Must be explicitly specify use Webpack.
+      if (options.webpack) {
+        for (const [native, info] of nativesMap) {
+          if (info.built) continue
+
+          try {
+            await webpackBundle(native, output, options.webpack)
+            info.built = true
+            fs.rmSync(info.interopFilename, { force: true })
+          } catch (error: any) {
+            console.error(`\n${TAG}`, error)
+            process.exit(1)
+          }
+        }
+      }
     },
   }
 }
@@ -158,15 +191,6 @@ async function webpackBundle(
           },
         ],
       },
-      plugins: [
-        new OnBuildDone({
-          name,
-          callback(assets) {
-            const code = getInteropSnippet(name, `./${name + NativeExt}`)
-            fs.writeFileSync(path.join(output, name + InteropExt), code)
-          },
-        }),
-      ],
     }
 
     if (webpackOpts.config) {
