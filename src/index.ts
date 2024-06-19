@@ -15,12 +15,6 @@ import { COLOURS } from 'vite-plugin-utils/function'
 import type { NodeLoaderOptions, WebpackAssetRelocatorLoader } from './types'
 import { createCjs, ensureDir, getInteropSnippet, getNatives } from './utils'
 
-export interface WebpackConfig {
-  webpackConfig?: Configuration | ((config: Configuration) => Configuration | undefined | Promise<Configuration | undefined>)
-  'node-loader'?: NodeLoaderOptions
-  '@vercel/webpack-asset-relocator-loader'?: WebpackAssetRelocatorLoader
-}
-
 export interface NativeOptions {
   /** @default 'node_natives' */
   assetsDir?: string
