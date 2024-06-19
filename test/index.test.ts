@@ -26,7 +26,7 @@ function initSqlite3(sqlite3: typeof import('sqlite3')) {
 }
 
 beforeAll(async () => {
-  for (const name of ['dist', 'dist-native', 'db.sqlite3']) {
+  for (const name of ['dist', 'db.sqlite3']) {
     fs.rmSync(path.join(root, name), { recursive: true, force: true })
   }
 
@@ -35,9 +35,15 @@ beforeAll(async () => {
 
 test('vite-plugin-native', async () => {
   const main = require('./fixtures/dist/main')
-  const sqlite3 = await initSqlite3(main.sqlite3)
-  const SerialPort = main.SerialPort
+  const fsevents = main.fsevents
+  const sqlite3 = main.sqlite3
+  const sqlite3DB = await initSqlite3(main.sqlite3)
 
-  expect(sqlite3.error).null
-  expect(SerialPort.toString().startsWith('class SerialPort')).true
+  expect(Object.getOwnPropertyNames(fsevents).filter(name => name !== 'default').reverse())
+    .toEqual(Object.getOwnPropertyNames(require('fsevents')))
+  // `require('sqlite3').path` will only be available after call `initSqlite3()`.
+  expect(Object.getOwnPropertyNames(sqlite3).filter(name => name !== 'default'))
+    .toEqual(Object.getOwnPropertyNames(require('sqlite3')).filter(name => name !== 'path'))
+  expect(sqlite3DB.database && typeof sqlite3DB.database).eq('object')
+  expect(sqlite3DB.error).null
 })
