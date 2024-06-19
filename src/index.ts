@@ -163,7 +163,7 @@ async function webpackBundle(
       entry: { [name]: name },
       output: {
         library: {
-          type: 'commonjs-static',
+          type: 'commonjs2',
         },
         path: output,
         filename: '[name]' + NativeExt,
