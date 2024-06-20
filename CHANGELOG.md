@@ -1,3 +1,8 @@
+## 2.0.1 (2023-06-20)
+
+- f80f4c9 feat(test): add `better-sqlite3`
+- 1716007 fix: reserve `.Interop.mjs` for build-watch mode
+
 ## 2.0.0 (2023-06-20)
 
 **Break**. This will be a completely new version.
