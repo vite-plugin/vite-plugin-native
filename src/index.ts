@@ -34,6 +34,7 @@ export default function native(options: NativeOptions): Plugin {
   const assetsDir = options.assetsDir ??= 'node_natives'
   const nativesMap = new Map<string, {
     built: boolean
+    nativeFilename: string
     interopFilename: string
   }>
   // Webpack output(absolute path)
@@ -60,6 +61,7 @@ export default function native(options: NativeOptions): Plugin {
       options.natives.length && ensureDir(output)
 
       for (const native of options.natives) {
+        const nativeFilename = path.join(output, native + NativeExt)
         const interopFilename = path.join(output, native + InteropExt)
 
         aliases.push({
@@ -76,7 +78,7 @@ export default function native(options: NativeOptions): Plugin {
               // because `build.emptyOutDir = true` will cause the built file to be removed.
 
               // Collect modules that are explicitly used.
-              nativesMap.set(native, { built: false, interopFilename })
+              nativesMap.set(native, { built: false, nativeFilename, interopFilename })
             }
 
             return { id: source }
@@ -104,7 +106,6 @@ export default function native(options: NativeOptions): Plugin {
           try {
             await webpackBundle(native, output, options.webpack)
             info.built = true
-            fs.rmSync(info.interopFilename, { force: true })
           } catch (error: any) {
             console.error(`\n${TAG}`, error)
             process.exit(1)
