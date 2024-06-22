@@ -125,6 +125,8 @@ function modifyAlias(config: UserConfig, aliases: Alias[]) {
       .reduce<Alias[]>((memo, [find, replacement]) => memo.concat({ find, replacement }), [])
   }
   const aliasArray = config.resolve.alias as Alias[]
+  // Using Array.push can ensure that user config has a higher priority
+  // @see https://github.com/rollup/plugins/blob/alias-v5.1.0/packages/alias/src/index.ts#L86
   aliasArray.push(...aliases)
 }
 
