@@ -29,14 +29,15 @@ const TAG = '[vite-plugin-native]'
 const loader1 = '@vercel/webpack-asset-relocator-loader'
 const NativeExt = '.native.cjs'
 const InteropExt = '.interop.mjs'
+// `nativesMap` is placed in the global scope and can be effective for multiple builds.
+const nativesMap = new Map<string, {
+  built: boolean
+  nativeFilename: string
+  interopFilename: string
+}>
 
 export default function native(options: NativeOptions): Plugin {
   const assetsDir = options.assetsDir ??= 'node_natives'
-  const nativesMap = new Map<string, {
-    built: boolean
-    nativeFilename: string
-    interopFilename: string
-  }>
   // Webpack output(absolute path)
   let output: string
 
@@ -125,6 +126,8 @@ function modifyAlias(config: UserConfig, aliases: Alias[]) {
       .reduce<Alias[]>((memo, [find, replacement]) => memo.concat({ find, replacement }), [])
   }
   const aliasArray = config.resolve.alias as Alias[]
+  // Using Array.push can ensure that user config has a higher priority
+  // @see https://github.com/rollup/plugins/blob/alias-v5.1.0/packages/alias/src/index.ts#L86
   aliasArray.push(...aliases)
 }
 

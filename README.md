@@ -7,7 +7,7 @@ Supports Node/Electron C/C++ native addons. It is a bundle solution based on [We
 [![NPM version](https://img.shields.io/npm/v/vite-plugin-native.svg)](https://npmjs.org/package/vite-plugin-native)
 [![NPM Downloads](https://img.shields.io/npm/dm/vite-plugin-native.svg)](https://npmjs.org/package/vite-plugin-native)
 
-English | [简体中文](./README.zn-CN.md)
+English | [简体中文](./README.zh-CN.md)
 
 ## Install
 
@@ -51,4 +51,4 @@ export interface NativeOptions {
 
 > TODO: Translate into English.
 
-See 👉🏻 [工作原理 (How to work)](./README.zn-CN.md#工作原理)
+See 👉🏻 [工作原理 (How to work)](./README.zh-CN.md#工作原理)
