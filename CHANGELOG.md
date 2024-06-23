@@ -1,3 +1,10 @@
+## 2.0.2 (2023-06-23)
+
+- 2ac2913 chore: remove useless files
+- af3128f feat: natives cache reuse
+- 8fcc3e9 chore: add comments
+- 39c1355 fix: filename typo
+
 ## 2.0.1 (2023-06-20)
 
 - f80f4c9 feat(test): add `better-sqlite3`
