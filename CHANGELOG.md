@@ -1,3 +1,8 @@
+## 2.1.0 (2023-06-25)
+
+- 867f085 test: v2.1.0
+- 931ff60 feat: support auto detect native modules
+
 ## 2.0.2 (2023-06-23)
 
 - 2ac2913 chore: remove useless files
