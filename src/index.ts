@@ -9,7 +9,15 @@ import {
 import type { Configuration } from 'webpack'
 import type { NodeLoaderOptions, WebpackAssetRelocatorLoader } from './types'
 import { COLOURS } from 'vite-plugin-utils/function'
-import { createCjs, ensureDir, getInteropSnippet, getNatives } from './utils'
+import {
+  type NativeRecord,
+  type NativeRecordType,
+  createCjs,
+  ensureDir,
+  getInteropSnippet,
+  getDependenciesNatives,
+  resolveNativeRecord,
+} from './utils'
 
 export interface NativeOptions {
   /** @default 'node_natives' */
@@ -29,11 +37,15 @@ const TAG = '[vite-plugin-native]'
 const loader1 = '@vercel/webpack-asset-relocator-loader'
 const NativeExt = '.native.cjs'
 const InteropExt = '.interop.mjs'
+// https://github.com/vitejs/vite/blob/v5.3.1/packages/vite/src/node/plugins/index.ts#L55
+const bareImportRE = /^(?![a-zA-Z]:)[\w@](?!.*:\/\/)/
 // `nativesMap` is placed in the global scope and can be effective for multiple builds.
 const nativesMap = new Map<string, {
-  built: boolean
+  status: 'built' | 'resolved'
   nativeFilename: string
   interopFilename: string
+  type: NativeRecordType
+  nodeFiles: string[]
 }>
 
 export default function native(options: NativeOptions): Plugin {
@@ -49,52 +61,78 @@ export default function native(options: NativeOptions): Plugin {
       const outDir = config.build?.outDir ?? 'dist'
       output = normalizePath(path.join(resolvedRoot, outDir, assetsDir))
 
-      const natives = await getNatives(resolvedRoot)
-      options.natives ??= natives
+      const depsNativeRecord = await getDependenciesNatives(resolvedRoot)
+      const depsNatives = [...depsNativeRecord.keys()]
 
-      if (typeof options.natives === 'function') {
-        options.natives = options.natives(natives)
+      if (options.natives) {
+        const natives = Array.isArray(options.natives)
+          ? options.natives
+          : options.natives(depsNatives)
+        // TODO: bundle modules based on `natives`.
       }
 
-      const aliases: Alias[] = []
       const withDistAssetBase = (p: string) => (assetsDir && p) ? `${assetsDir}/${p}` : p
 
-      options.natives.length && ensureDir(output)
+      let detectedNativeRecord: NativeRecord = new Map
+      let detectedNatives: string[] = []
 
-      for (const native of options.natives) {
-        const nativeFilename = path.join(output, native + NativeExt)
-        const interopFilename = path.join(output, native + InteropExt)
+      const alias: Alias = {
+        find: /(.*)/,
+        // Keep `customResolver` receive original source.
+        // @see https://github.com/rollup/plugins/blob/alias-v5.1.0/packages/alias/src/index.ts#L92
+        replacement: '$1',
+        async customResolver(source, importer) {
+          if (!importer) return
+          if (!bareImportRE.test(source)) return
 
-        aliases.push({
-          find: native,
-          replacement: interopFilename,
-          customResolver(source) {
-            const record = nativesMap.get(native)
-            if (!record?.built) {
+          if (!depsNativeRecord.has(source)) {
+            // Auto detection.
+            // e.g. serialport -> @serialport/bindings-cpp
+            const nativeRecord = await resolveNativeRecord(source, importer)
+            if (nativeRecord) {
+              detectedNativeRecord = new Map([...detectedNativeRecord, ...nativeRecord])
+              detectedNatives = [...depsNativeRecord.keys()]
+            }
+          }
+
+          if ([...depsNatives, ...detectedNatives].includes(source)) {
+            const nativeFilename = path.join(output, source + NativeExt)
+            const interopFilename = path.join(output, source + InteropExt)
+
+            if (!nativesMap.get(source)) {
+              ensureDir(output)
+
               // Generate Vite and Webpack interop file.
-              const code = getInteropSnippet(native, `./${withDistAssetBase(native + NativeExt)}`)
-              fs.writeFileSync(interopFilename, code)
+              fs.writeFileSync(
+                interopFilename,
+                getInteropSnippet(source, `./${withDistAssetBase(source + NativeExt)}`),
+              )
 
               // We did not immediately call the `webpackBundle()` build here 
               // because `build.emptyOutDir = true` will cause the built file to be removed.
 
+              const isDetected = detectedNativeRecord.has(source)
+
               // Collect modules that are explicitly used.
-              nativesMap.set(native, { built: false, nativeFilename, interopFilename })
+              nativesMap.set(source, {
+                status: 'resolved',
+                nativeFilename,
+                interopFilename,
+                type: isDetected ? 'detected' : 'dependencies',
+                nodeFiles: isDetected
+                  ? detectedNativeRecord.get(source)?.nativeFiles!
+                  : depsNativeRecord.get(source)?.nativeFiles!,
+              })
             }
 
-            return { id: source }
-          },
-        })
+            return { id: interopFilename }
+          }
+        },
       }
 
-      const aliasKeys = aliases.map(({ find }) => find as string)
-
-      modifyAlias(config, aliases)
+      modifyAlias(config, [alias])
       // Run build are not necessary.
-      modifyOptimizeDeps(config, aliasKeys)
-    },
-    resolveId() {
-      // TODO: dynamic detect by bare moduleId. e.g. serialport
+      modifyOptimizeDeps(config, [...depsNatives, ...detectedNatives])
     },
     async buildEnd(error) {
       if (error) return
@@ -102,11 +140,12 @@ export default function native(options: NativeOptions): Plugin {
       // Must be explicitly specify use Webpack.
       if (options.webpack) {
         for (const [native, info] of nativesMap) {
-          if (info.built) continue
+          if (info.status === 'built') continue
 
           try {
             await webpackBundle(native, output, options.webpack)
-            info.built = true
+            // TODO: force copy *.node files to dist/node_modules path if Webpack can't bundle it correctly.
+            info.status = 'built'
           } catch (error: any) {
             console.error(`\n${TAG}`, error)
             process.exit(1)
@@ -148,7 +187,7 @@ async function webpackBundle(
   webpackOpts: NonNullable<NativeOptions['webpack']>
 ) {
   webpackOpts[loader1] ??= {}
-  const { validate, webpack } = cjs.require('webpack') as typeof import('webpack');
+  const { validate, webpack } = cjs.require('webpack') as typeof import('webpack')
   const assetBase = webpackOpts[loader1].outputAssetBase ??= 'native_modules'
 
   return new Promise<null>(async (resolve, reject) => {
