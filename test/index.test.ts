@@ -9,41 +9,6 @@ import {
 
 const root = path.join(__dirname, 'fixtures')
 
-function initSqlite3(sqlite3: typeof import('sqlite3')) {
-  const sqlite3_db = path.join(root, 'db/sqlite3.db')
-
-  return new Promise<{
-    database: import('sqlite3').Database
-    error: Error | null
-  }>(resolve => {
-    const db = new (sqlite3.verbose().Database)(sqlite3_db, error => {
-      resolve({
-        database: db,
-        error,
-      })
-    })
-  })
-}
-
-function initBetterSqlite3(BetterSqlite3: typeof import('better-sqlite3')) {
-  const better_sqlite3_db = path.join(root, 'db/better-sqlite3.db')
-
-  return new Promise<{
-    database: import('better-sqlite3').Database
-    error: Error | null
-  }>(resolve => {
-    const db = new BetterSqlite3(better_sqlite3_db, { verbose: console.log })
-    // https://github.com/WiseLibs/better-sqlite3/blob/v11.1.0/docs/api.md#pragmastring-options---results
-    db.pragma('cache_size = 32000')
-    resolve({
-      database: db,
-      error: db.pragma('cache_size', { simple: true }) === 32000
-        ? null
-        : new Error('better-sqlite3 initialize failed'),
-    })
-  })
-}
-
 beforeAll(async () => {
   for (const name of ['dist', 'db']) {
     fs.rmSync(path.join(root, name), { recursive: true, force: true })
@@ -57,16 +22,21 @@ test('vite-plugin-native', async () => {
   const main = require('./fixtures/dist/main')
   const fsevents = main.fsevents
   const sqlite3 = main.sqlite3
-  const sqlite3DB = await initSqlite3(main.sqlite3)
-  const better_sqlite3DB = await initBetterSqlite3(main.better_sqlite3)
+  const sqlite3DB = await main.initSqlite3()
+  const better_sqlite3DB = await main.initBetterSqlite3()
 
-  expect(Object.getOwnPropertyNames(fsevents).filter(name => name !== 'default').reverse())
-    .toEqual(Object.getOwnPropertyNames(require('fsevents')))
+  const fseventsKeys1 = Object.getOwnPropertyNames(fsevents).filter(name => name !== 'default')
+  // esm export members will be auto sort.
+  const fseventsKeys2 = Object.getOwnPropertyNames(require('fsevents')).sort((a, b) => a.localeCompare(b))
+  expect(fseventsKeys1).toEqual(fseventsKeys2)
+
+  const sqlite3Keys1 = Object.getOwnPropertyNames(sqlite3).filter(name => name !== 'default')
   // `require('sqlite3').path` will only be available after call `initSqlite3()`.
-  expect(Object.getOwnPropertyNames(sqlite3).filter(name => name !== 'default'))
-    .toEqual(Object.getOwnPropertyNames(require('sqlite3')).filter(name => name !== 'path'))
+  const sqlite3Keys2 = Object.getOwnPropertyNames(require('sqlite3')).filter(name => name !== 'path')
+  expect(sqlite3Keys1).toEqual(sqlite3Keys2)
   expect(sqlite3DB.database && typeof sqlite3DB.database).eq('object')
   expect(sqlite3DB.error).null
+
   expect(better_sqlite3DB.database && typeof better_sqlite3DB.database).eq('object')
   expect(better_sqlite3DB.error).null
 })

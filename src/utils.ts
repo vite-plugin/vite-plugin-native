@@ -6,6 +6,13 @@ import glob from 'fast-glob'
 import _libEsm from 'lib-esm'
 import { node_modules as findNodeModules } from 'vite-plugin-utils/function'
 
+export type NativeRecordType = 'dependencies' | 'detected'
+export type NativeRecord = Map<string, {
+  type: NativeRecordType
+  path: string
+  nativeFiles: string[]
+}>
+
 // @ts-ignore
 const libEsm: typeof import('lib-esm').default = _libEsm.default || _libEsm
 const cjs = createCjs(import.meta.url)
@@ -26,10 +33,16 @@ export function createCjs(url = import.meta.url) {
   }
 }
 
-export async function getNatives(root = process.cwd()) {
+export async function globNativeFiles(cwd: string) {
+  // @see https://github.com/electron/forge/blob/v7.4.0/packages/plugin/webpack/src/WebpackPlugin.ts#L192
+  const nativeFiles = await glob('**/*.node', { cwd })
+  return nativeFiles
+}
+
+export async function getDependenciesNatives(root = process.cwd()): Promise<NativeRecord> {
   const node_modules_paths = findNodeModules(root)
   // Native modules of package.json
-  const natives = []
+  const natives: NativeRecord = new Map
 
   for (const node_modules_path of node_modules_paths) {
     const pkgId = path.join(node_modules_path, '../package.json')
@@ -40,11 +53,14 @@ export async function getNatives(root = process.cwd()) {
 
       for (const dep of deps) {
         const depPath = path.join(node_modules_path, dep)
-        // @see https://github.com/electron/forge/blob/v7.4.0/packages/plugin/webpack/src/WebpackPlugin.ts#L192
-        const nativeFiles = await glob('**/*.node', { cwd: depPath })
+        const nativeFiles = await globNativeFiles(depPath)
 
         if (nativeFiles.length) {
-          natives.push(dep)
+          natives.set(dep, {
+            type: 'dependencies',
+            path: depPath,
+            nativeFiles,
+          })
         }
       }
     }
@@ -72,4 +88,23 @@ export function ensureDir(dir: string) {
     fs.mkdirSync(dir, { recursive: true })
   }
   return dir
+}
+
+export async function resolveNativeRecord(source: string, importer: string): Promise<NativeRecord | undefined> {
+  let modulePath: string | undefined
+  try {
+    const modulePackageJson = cjs.require.resolve(`${source}/package.json`, {
+      paths: [importer],
+    })
+    modulePath = path.dirname(modulePackageJson)
+  } catch { }
+
+  if (modulePath) {
+    const nodeFiles = await globNativeFiles(modulePath)
+    return new Map().set(source, {
+      type: 'deep-dependencies',
+      path: modulePath,
+      nodeFiles,
+    })
+  }
 }
