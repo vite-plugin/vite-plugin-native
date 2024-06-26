@@ -11,7 +11,6 @@ import type { NodeLoaderOptions, WebpackAssetRelocatorLoader } from './types'
 import { COLOURS } from 'vite-plugin-utils/function'
 import {
   type NativeRecord,
-  type NativeRecordType,
   createCjs,
   ensureDir,
   getInteropSnippet,
@@ -22,8 +21,13 @@ import {
 export interface NativeOptions {
   /** @default 'node_natives' */
   assetsDir?: string
-  /** By default native modules are automatically detected if this option is not explicitly configure by the user. */
+  /** 
+   * By default native modules are automatically detected if this option is not explicitly configure by the user.
+   * @deprecated use `ignore` option instead
+   */
   natives?: string[] | ((natives: string[]) => string[])
+  /** Ignore the specified native module. */
+  ignore?: (name: string) => boolean | undefined
   /** Enable and configure webpack. */
   webpack?: {
     config?: (config: Configuration) => Configuration | undefined | Promise<Configuration | undefined>
@@ -44,8 +48,7 @@ const nativesMap = new Map<string, {
   status: 'built' | 'resolved'
   nativeFilename: string
   interopFilename: string
-  type: NativeRecordType
-  nodeFiles: string[]
+  native: NativeRecord
 }>
 
 export default function native(options: NativeOptions): Plugin {
@@ -61,21 +64,16 @@ export default function native(options: NativeOptions): Plugin {
       const outDir = config.build?.outDir ?? 'dist'
       output = normalizePath(path.join(resolvedRoot, outDir, assetsDir))
 
-      const depsNativeRecord = await getDependenciesNatives(resolvedRoot)
-      const depsNatives = [...depsNativeRecord.keys()]
+      let nativeRecord = await getDependenciesNatives(resolvedRoot)
 
       if (options.natives) {
         const natives = Array.isArray(options.natives)
           ? options.natives
-          : options.natives(depsNatives)
+          : options.natives([...nativeRecord.keys()])
         // TODO: bundle modules based on `natives`.
       }
 
       const withDistAssetBase = (p: string) => (assetsDir && p) ? `${assetsDir}/${p}` : p
-
-      let detectedNativeRecord: NativeRecord = new Map
-      let detectedNatives: string[] = []
-
       const alias: Alias = {
         find: /(.*)/,
         // Keep `customResolver` receive original source.
@@ -85,54 +83,51 @@ export default function native(options: NativeOptions): Plugin {
           if (!importer) return
           if (!bareImportRE.test(source)) return
 
-          if (!depsNativeRecord.has(source)) {
-            // Auto detection.
+          if (!nativeRecord.has(source)) {
+            // Dynamic deep detection.
             // e.g. serialport -> @serialport/bindings-cpp
-            const nativeRecord = await resolveNativeRecord(source, importer)
-            if (nativeRecord) {
-              detectedNativeRecord = new Map([...detectedNativeRecord, ...nativeRecord])
-              detectedNatives = [...depsNativeRecord.keys()]
-            }
+            nativeRecord = new Map([...nativeRecord, ...(await resolveNativeRecord(source, importer) ?? [])])
           }
 
-          if ([...depsNatives, ...detectedNatives].includes(source)) {
-            const nativeFilename = path.join(output, source + NativeExt)
-            const interopFilename = path.join(output, source + InteropExt)
+          const nativeItem = nativeRecord.get(source)
+          if (!nativeItem) return
 
-            if (!nativesMap.get(source)) {
-              ensureDir(output)
-
-              // Generate Vite and Webpack interop file.
-              fs.writeFileSync(
-                interopFilename,
-                getInteropSnippet(source, `./${withDistAssetBase(source + NativeExt)}`),
-              )
-
-              // We did not immediately call the `webpackBundle()` build here 
-              // because `build.emptyOutDir = true` will cause the built file to be removed.
-
-              const isDetected = detectedNativeRecord.has(source)
-
-              // Collect modules that are explicitly used.
-              nativesMap.set(source, {
-                status: 'resolved',
-                nativeFilename,
-                interopFilename,
-                type: isDetected ? 'detected' : 'dependencies',
-                nodeFiles: isDetected
-                  ? detectedNativeRecord.get(source)?.nativeFiles!
-                  : depsNativeRecord.get(source)?.nativeFiles!,
-              })
-            }
-
-            return { id: interopFilename }
+          if (options.ignore?.(source) === false) {
+            nativeItem.ignore = true
+            return
           }
+
+          const nativeFilename = path.join(output, source + NativeExt)
+          const interopFilename = path.join(output, source + InteropExt)
+
+          if (!nativesMap.get(source)) {
+            ensureDir(output)
+
+            // Generate Vite and Webpack interop file.
+            fs.writeFileSync(
+              interopFilename,
+              getInteropSnippet(source, `./${withDistAssetBase(source + NativeExt)}`),
+            )
+
+            // We did not immediately call the `webpackBundle()` build here 
+            // because `build.emptyOutDir = true` will cause the built file to be removed.
+
+            // Collect modules that are explicitly used.
+            nativesMap.set(source, {
+              status: 'resolved',
+              nativeFilename,
+              interopFilename,
+              native: nativeItem,
+            })
+          }
+
+          return { id: interopFilename }
         },
       }
 
       modifyAlias(config, [alias])
       // Run build are not necessary.
-      modifyOptimizeDeps(config, [...depsNatives, ...detectedNatives])
+      modifyOptimizeDeps(config, [...nativeRecord.keys()])
     },
     async buildEnd(error) {
       if (error) return
@@ -257,4 +252,8 @@ async function webpackBundle(
       resolve(null)
     })
   })
+}
+
+async function ensureNodeFiles() {
+
 }

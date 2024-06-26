@@ -6,12 +6,12 @@ import glob from 'fast-glob'
 import _libEsm from 'lib-esm'
 import { node_modules as findNodeModules } from 'vite-plugin-utils/function'
 
-export type NativeRecordType = 'dependencies' | 'detected'
-export type NativeRecord = Map<string, {
-  type: NativeRecordType
+export interface NativeRecord {
+  type: 'dependencies' | 'detected'
   path: string
   nativeFiles: string[]
-}>
+  ignore?: true
+}
 
 // @ts-ignore
 const libEsm: typeof import('lib-esm').default = _libEsm.default || _libEsm
@@ -39,10 +39,10 @@ export async function globNativeFiles(cwd: string) {
   return nativeFiles
 }
 
-export async function getDependenciesNatives(root = process.cwd()): Promise<NativeRecord> {
+export async function getDependenciesNatives(root = process.cwd()): Promise<Map<string, NativeRecord>> {
   const node_modules_paths = findNodeModules(root)
   // Native modules of package.json
-  const natives: NativeRecord = new Map
+  const natives = new Map<string, NativeRecord>
 
   for (const node_modules_path of node_modules_paths) {
     const pkgId = path.join(node_modules_path, '../package.json')
@@ -52,6 +52,8 @@ export async function getDependenciesNatives(root = process.cwd()): Promise<Nati
       const deps = Object.keys(pkg.dependencies || {}).concat(Object.keys(pkg.devDependencies || {}))
 
       for (const dep of deps) {
+        if (natives.has(dep)) continue
+
         const depPath = path.join(node_modules_path, dep)
         const nativeFiles = await globNativeFiles(depPath)
 
@@ -90,7 +92,7 @@ export function ensureDir(dir: string) {
   return dir
 }
 
-export async function resolveNativeRecord(source: string, importer: string): Promise<NativeRecord | undefined> {
+export async function resolveNativeRecord(source: string, importer: string): Promise<Map<string, NativeRecord> | undefined> {
   let modulePath: string | undefined
   try {
     const modulePackageJson = cjs.require.resolve(`${source}/package.json`, {
@@ -100,11 +102,11 @@ export async function resolveNativeRecord(source: string, importer: string): Pro
   } catch { }
 
   if (modulePath) {
-    const nodeFiles = await globNativeFiles(modulePath)
-    return new Map().set(source, {
-      type: 'deep-dependencies',
+    const nativeFiles = await globNativeFiles(modulePath)
+    return new Map<string, NativeRecord>().set(source, {
+      type: 'detected',
       path: modulePath,
-      nodeFiles,
+      nativeFiles,
     })
   }
 }
