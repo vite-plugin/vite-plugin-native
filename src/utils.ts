@@ -6,7 +6,15 @@ import glob from 'fast-glob'
 import _libEsm from 'lib-esm'
 import { node_modules as findNodeModules } from 'vite-plugin-utils/function'
 
+export interface ResolvedNativeRecord {
+  status: 'built' | 'resolved'
+  nativeFilename: string
+  interopFilename: string
+  native: NativeRecord
+}
+
 export interface NativeRecord {
+  name: string
   type: 'dependencies' | 'detected'
   path: string
   nativeFiles: string[]
@@ -59,6 +67,7 @@ export async function getDependenciesNatives(root = process.cwd()): Promise<Map<
 
         if (nativeFiles.length) {
           natives.set(dep, {
+            name: dep,
             type: 'dependencies',
             path: depPath,
             nativeFiles,
@@ -103,10 +112,31 @@ export async function resolveNativeRecord(source: string, importer: string): Pro
 
   if (modulePath) {
     const nativeFiles = await globNativeFiles(modulePath)
-    return new Map<string, NativeRecord>().set(source, {
-      type: 'detected',
-      path: modulePath,
-      nativeFiles,
-    })
+    if (nativeFiles.length) {
+      return new Map<string, NativeRecord>().set(source, {
+        name: source,
+        type: 'detected',
+        path: modulePath,
+        nativeFiles,
+      })
+    }
+  }
+}
+
+function copyDir(srcDir: string, destDir: string) {
+  fs.mkdirSync(destDir, { recursive: true })
+  for (const file of fs.readdirSync(srcDir)) {
+    const srcFile = path.resolve(srcDir, file)
+    const destFile = path.resolve(destDir, file)
+    copy(srcFile, destFile)
+  }
+}
+
+export function copy(src: string, dest: string) {
+  const stat = fs.statSync(src)
+  if (stat.isDirectory()) {
+    copyDir(src, dest)
+  } else {
+    fs.copyFileSync(src, dest)
   }
 }
