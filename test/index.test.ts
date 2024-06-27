@@ -24,6 +24,7 @@ test('vite-plugin-native', async () => {
   const sqlite3 = main.sqlite3
   const sqlite3DB = await main.initSqlite3()
   const better_sqlite3DB = await main.initBetterSqlite3()
+  const serialport = await main.initSerialport()
 
   const fseventsKeys1 = Object.getOwnPropertyNames(fsevents).filter(name => name !== 'default')
   // esm export members will be auto sort.
@@ -39,4 +40,7 @@ test('vite-plugin-native', async () => {
 
   expect(better_sqlite3DB.database && typeof better_sqlite3DB.database).eq('object')
   expect(better_sqlite3DB.error).null
+
+  expect(Array.isArray(serialport.list)).true
+  expect(serialport.error).null
 })

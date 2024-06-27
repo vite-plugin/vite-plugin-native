@@ -922,6 +922,11 @@ delegates@^1.0.0:
   resolved "https://registry.yarnpkg.com/delegates/-/delegates-1.0.0.tgz#84c6e159b81904fdca59a0ef44cd870d31250f9a"
   integrity sha512-bd2L678uiWATM6m5Z1VzNCErI3jiGzt6HGY8OVICs40JQq/HALfbyNJmp0UDakEY4pMMaN0Ly5om/B1VI/+xfQ==
 
+dependencies-tree@~0.2.0:
+  version "0.2.0"
+  resolved "https://registry.yarnpkg.com/dependencies-tree/-/dependencies-tree-0.2.0.tgz#2f740faf194d983f08e1bf492f72b197191154e7"
+  integrity sha512-Cxh109TbDFhDxHEdKakySnS7FGUIOWg85kftI1h8HK8pRCLvq1aYFPl59HennOFmwczd7K2LTxOwUBJOrnEz6Q==
+
 detect-libc@^2.0.0:
   version "2.0.3"
   resolved "https://registry.yarnpkg.com/detect-libc/-/detect-libc-2.0.3.tgz#f0cd503b40f9939b894697d19ad50895e30cf700"
@@ -1382,7 +1387,7 @@ json5@^2.1.2:
   resolved "https://registry.yarnpkg.com/json5/-/json5-2.2.3.tgz#78cd6f1a19bdc12b73db5ad0c61efd66c1e29283"
   integrity sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==
 
-lib-esm@^0.4.2:
+lib-esm@~0.4.2:
   version "0.4.2"
   resolved "https://registry.yarnpkg.com/lib-esm/-/lib-esm-0.4.2.tgz#1f08ad1750b46c47d371d4f7e1a772b56db3324d"
   integrity sha512-VGqaEGuryUbT7FLGxXg46nrSzkhLzyk+JQjYoYEORH5UtdIu3yf6DCOqh65FOR3bWOHHGINQH/vR5YGGIFBgJw==

@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-native",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Supports Node/Electron C/C++ native addons",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,12 +20,14 @@
     "build": "vite build",
     "types": "tsc --emitDeclarationOnly",
     "prepublishOnly": "npm run build && npm run test",
+    "build:test": "vite build -c test/fixtures/vite.config.ts",
     "test": "vitest run"
   },
   "dependencies": {
     "@vercel/webpack-asset-relocator-loader": "1.7.3",
+    "dependencies-tree": "~0.2.0",
     "fast-glob": "^3.3.2",
-    "lib-esm": "^0.4.2",
+    "lib-esm": "~0.4.2",
     "node-loader": "^2.0.0",
     "webpack": "^5.70.0"
   },

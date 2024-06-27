@@ -1,3 +1,8 @@
+## 2.2.0 (2023-06-27)
+
+- 64b881a feat: add `options.forceCopyIfUnbuilt`
+- 7c60957 feat: add `options.ignore`
+
 ## 2.1.0 (2023-06-25)
 
 - 867f085 test: v2.1.0
