@@ -26,7 +26,7 @@ export default defineConfig({
   },
   plugins: [
     native({
-      natives: (names) => names.concat('serialport'),
+      forceCopyIfUnbuilt: true,
       webpack: {},
     }),
   ],

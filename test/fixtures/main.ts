@@ -1,7 +1,7 @@
 import path from 'node:path'
 
-// TODO: https://github.com/serialport/node-serialport/issues/2464
-// import * as serialport from 'serialport'
+// 🚨 https://github.com/serialport/node-serialport/issues/2464
+import { SerialPort } from 'serialport'
 import * as fsevents from 'fsevents'
 import sqlite3 from 'sqlite3'
 import BetterSqlite3 from 'better-sqlite3'
@@ -46,4 +46,19 @@ export function initBetterSqlite3() {
         : new Error('better-sqlite3 initialize failed'),
     })
   })
+}
+
+export async function initSerialport() {
+  try {
+    const list = await SerialPort.list()
+    return {
+      list,
+      error: Array.isArray(list) ? null : new Error('serialport initialize failed'),
+    }
+  } catch (error) {
+    return {
+      list: null,
+      error,
+    }
+  }
 }
