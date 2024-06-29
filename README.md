@@ -36,8 +36,15 @@ export default {
 export interface NativeOptions {
   /** @default 'node_natives' */
   assetsDir?: string
-  /** By default native modules are automatically detected if this option is not explicitly configure by the user. */
+  /** 
+   * By default native modules are automatically detected if this option is not explicitly configure by the user.
+   * @deprecated use `ignore` option instead
+   */
   natives?: string[] | ((natives: string[]) => string[])
+  /** Ignore the specified native module. */
+  ignore?: (name: string) => boolean | undefined
+  /** Force copy *.node files to dist/node_modules path if Webpack can't bundle native modules correctly. */
+  forceCopyIfUnbuilt?: true
   /** Enable and configure webpack. */
   webpack?: {
     config?: (config: Configuration) => Configuration | undefined | Promise<Configuration | undefined>
