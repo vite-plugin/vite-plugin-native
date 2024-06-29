@@ -46,10 +46,10 @@ const loader1 = '@vercel/webpack-asset-relocator-loader'
 const outputAssetBase = 'native_modules'
 const NativeExt = '.native.cjs'
 const InteropExt = '.interop.mjs'
-// https://github.com/vitejs/vite/blob/v5.3.1/packages/vite/src/node/plugins/index.ts#L55
-const bareImportRE = /^(?![a-zA-Z]:)[\w@](?!.*:\/\/)/
 // `nativesMap` is placed in the global scope and can be effective for multiple builds.
 const nativesMap = new Map<string, ResolvedNativeRecord>
+// https://github.com/npm/validate-npm-package-name/blob/v5.0.1/lib/index.js#L4
+const scopedPackagePattern = /^(?![a-zA-Z]:)[\w@](?!.*:\/\/)/
 
 export default function native(options: NativeOptions): Plugin {
   const assetsDir = options.assetsDir ??= 'node_natives'
@@ -75,13 +75,13 @@ export default function native(options: NativeOptions): Plugin {
 
       const withDistAssetBase = (p: string) => (assetsDir && p) ? `${assetsDir}/${p}` : p
       const alias: Alias = {
-        find: /(.*)/,
+        find: /^(?!(?:\/?@vite\/|\.))(.*)/,
         // Keep `customResolver` receive original source.
         // @see https://github.com/rollup/plugins/blob/alias-v5.1.0/packages/alias/src/index.ts#L92
         replacement: '$1',
         async customResolver(source, importer) {
           if (!importer) return
-          if (!bareImportRE.test(source)) return
+          if (!scopedPackagePattern.test(source)) return
 
           if (!nativeRecord.has(source)) {
             // Dynamic deep detection.
