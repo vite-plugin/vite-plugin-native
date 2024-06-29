@@ -1,3 +1,7 @@
+## 2.2.1 (2023-06-29)
+
+- 548fedb fix: avoid Vite built-in alias
+
 ## 2.2.0 (2023-06-27)
 
 - 64b881a feat: add `options.forceCopyIfUnbuilt`
