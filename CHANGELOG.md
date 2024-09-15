@@ -1,3 +1,7 @@
+## 2.2.2 (2023-09-15)
+
+- da22d3e fix: relative path calc on Windows [#13](https://github.com/vite-plugin/vite-plugin-native/issues/13)
+
 ## 2.2.1 (2023-06-29)
 
 - 548fedb fix: avoid Vite built-in alias
