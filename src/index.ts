@@ -97,8 +97,8 @@ export default function native(options: NativeOptions): Plugin {
             return
           }
 
-          const nativeFilename = path.join(output, source + NativeExt)
-          const interopFilename = path.join(output, source + InteropExt)
+          const nativeFilename = path.posix.join(output, source + NativeExt)
+          const interopFilename = path.posix.join(output, source + InteropExt)
 
           if (!nativesMap.get(source)) {
             ensureDir(path.dirname(interopFilename))
@@ -279,7 +279,7 @@ async function forceCopyNativeFilesIfUnbuilt(
     .some((file) => fs.existsSync(path.join(nativeOutput, file)))
 
   if (!exists) {
-    const nativeDest = path.join(nativeNodeModules, nativeName)
+    const nativeDest = path.posix.join(nativeNodeModules, nativeName)
     copy(nativeRoot, nativeDest)
 
     const dependencies = await flatDependencies(nativeRoot)

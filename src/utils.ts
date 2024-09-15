@@ -62,7 +62,7 @@ export async function getDependenciesNatives(root = process.cwd()): Promise<Map<
       for (const dep of deps) {
         if (natives.has(dep)) continue
 
-        const depPath = path.join(node_modules_path, dep)
+        const depPath = path.posix.join(node_modules_path, dep)
         const nativeFiles = await globNativeFiles(depPath)
 
         if (nativeFiles.length) {
