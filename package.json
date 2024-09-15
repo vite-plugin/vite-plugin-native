@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-native",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Supports Node/Electron C/C++ native addons",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
